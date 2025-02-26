@@ -1,10 +1,17 @@
 import json
-import socket
 import threading
 import struct
-import websocket  # Use the websocket-client library
 
-def parse_babelfish_command(command):
+from WebsocketHandler import WebsocketHandler
+
+ws = WebsocketHandler()
+
+serial_port = "/dev/ttyACM0"  # Update to match the serial port
+hostaddr = "0.0.0.0"
+port = 9000
+
+
+def parse_babelfishserial_command(command):
     """
     Parses a BabelFish command string into a dictionary, extracts byte values,
     performs bitwise operations, and converts the result to a formatted JSON packet.
@@ -41,68 +48,49 @@ def parse_babelfish_command(command):
     except Exception as e:
         return {"error": str(e)}
 
-def transmit_command(json_packet, host="0.0.0.0", port=9000):
-    """
-    Sends a JSON packet to the specified host and port.
-    """
-    try:
-        ws = websocket.create_connection(f"ws://{host}:{port}")
-        ws.send(json_packet)
-        ws.close()
-    except Exception as e:
-        print(f"Error sending packets: {e}")
+def parse_babelfishws_command(command):
+    # Parse the JSON packet and assemble into serial (on a per command basis (use switch or match case))
+    pass
+
+
 
 def handle_serial(serial_port):
     """
     Handles reading from the serial port, parsing commands, and sending them to the web socket.
     """
     try:
-        import serial  # PySerial for standard Python (I was testing this in my pc not using micropython)
+        
         uart = serial.Serial(serial_port, baudrate=115200, timeout=1)
         print(f"Listening on {serial_port} at 115200 baud...")
 
         while True:
             if uart.in_waiting > 0:
                 raw_data = uart.readline().strip().decode('utf-8')
-                parsed_command = parse_babelfish_command(raw_data)
+                parsed_command = parse_babelfishserial_command(raw_data)
                 json_packet = json.dumps(parsed_command, indent=2)
                 print(json_packet)
-                transmit_command(json_packet)  # Call the synchronous function
+                ws.send(json_packet)
     except Exception as e:
         print(f"Error with UART: {e}")
 
-def receive_command(host="0.0.0.0", port=8000):
-    """
-    Handles receiving BabelFish commands over a TCP socket.
-    """
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-            server_socket.bind((host, port))
-            server_socket.listen(5)
-            print(f"Listening for BabelFish commands on {host}:{port}...")
-
-            while True:
-                client_socket, client_address = server_socket.accept()
-                with client_socket:
-                    print(f"Connection established with {client_address}")
-                    raw_data = client_socket.recv(1024).decode('utf-8').strip()
-                    if raw_data:
-                        parsed_command = parse_babelfish_command(raw_data)
-                        json_packet = json.dumps(parsed_command, indent=2)
-                        print(json_packet)
-                        transmit_command(json_packet)  # Call the synchronous function
-    except Exception as e:
-        print(f"Error with socket: {e}")
+def mainThread():
+    while True:
+        if ws.msg_avail():
+            message = ws.get_msg()
+            print(f"Received from WebSocket: {message}")
+        else:
+            pass
 
 def main():
-    serial_port = "/dev/ttyACM0"  # Update to match the serial port
-
     # Start serial port and socket handlers in separate threads
+    main_thread = threading.Thread(target=mainThread)
     serial_thread = threading.Thread(target=handle_serial, args=(serial_port,))
-    socket_thread = threading.Thread(target=receive_command)
+    socket_thread = ws.start_in_thread()
+
 
     serial_thread.start()
     socket_thread.start()
+    main_thread.start()
 
     try:
         serial_thread.join()
