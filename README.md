@@ -1,0 +1,2 @@
+#Babelfish Rover Socket Module
+This is a python program to allow a SBC to communicate using the BabelFish Protocol, this particular implimentation provides a websocket server in which SwinGCS is able to connect to and pass Babelfish packets to and from the rover, to do this, it will parse incoming JSON packets and crack them into serial form. it will also parse serial and convert it into JSON to pass to GCS
