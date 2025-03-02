@@ -1,8 +1,11 @@
 import json
 import threading
 import struct
+import serial
+
 
 from WebsocketHandler import WebsocketHandler
+
 
 ws = WebsocketHandler()
 
@@ -48,9 +51,71 @@ def parse_babelfishserial_command(command):
     except Exception as e:
         return {"error": str(e)}
 
+def value_to_hex(value, precision=32):
+    """
+    Converts values based on type:
+    - If it starts with "0x", return as is (already hex).
+    - If it contains ".", convert it as a 32-bit IEEE 754 float.
+    - If it is an integer, convert to hex.
+    - Otherwise, return the string as is.
+    """
+    if isinstance(value, str) and value.startswith("0x"):  
+        return value[2:].upper()  # Keep as hex, remove "0x" prefix
+
+    elif isinstance(value, str) and "." in value:  
+        # Convert float to IEEE 754 (single-precision)
+        float_hex = struct.unpack('!I', struct.pack('!f', float(value)))[0]
+        return hex(float_hex)[2:].upper()
+
+    elif isinstance(value, str) and value.isdigit():  
+        return hex(int(value))[2:].upper()
+
+    elif isinstance(value, int):  
+        return hex(value)[2:].upper()
+
+    elif isinstance(value, float):  
+        float_hex = struct.unpack('!I', struct.pack('!f', value))[0]
+        return hex(float_hex)[2:].upper()
+
+    else:  
+        return value  # Return the string as-is
+    
+
 def parse_babelfishws_command(command):
+    data = json.loads(command)
+    cmd = data.get("CMD", "UNKNOWN")
+    module_id = data.get("MID", "UNKNOWN")
+    part_num = data.get("PNo", "UNKNOWN")
+    t_no = data.get("TNo", "UNKNOWN")
+    p_id = data.get("PID", "UNKNOWN")
+    value = data.get("Data", {}).get("value", "UNKNOWN")
+    target = data.get("Target", "UNKNOWN")
+    data_type = data.get("Data", {}).get("datatype", "UNKNOWN")
+    err = data.get("ERR", "UNKNOWN")
+    command_ID = None
+    match cmd:
+        case "RQT":
+            command_ID = "0x00"
+            #logic that does something
+            pass
+
+        case "SET":
+            command_ID = "0x01"
+            #logic that does something
+            pass
+
+        case "RST":
+            command_ID = "0x02"
+            #logic that does something
+            pass
+
+        #List goes on for all possible sent commands and return commands
+
+    serial_message = f"{cmd}:{value_to_hex(module_id)}:{value_to_hex(part_num)}:{value_to_hex(t_no)}:{value_to_hex(p_id)}:{value_to_hex(value)}:{value_to_hex(target)}:{value_to_hex(data_type)}:{value_to_hex(err)}\n"
+    uart = serial.Serial(serial_port, baudrate=115200, timeout=1)
+    uart.write(serial_message.encode('utf-8'))
     # Parse the JSON packet and assemble into serial (on a per command basis (use switch or match case))
-    pass
+    
 
 
 
@@ -72,6 +137,8 @@ def handle_serial(serial_port):
                 ws.send(json_packet)
     except Exception as e:
         print(f"Error with UART: {e}")
+
+#
 
 def mainThread():
     while True:
