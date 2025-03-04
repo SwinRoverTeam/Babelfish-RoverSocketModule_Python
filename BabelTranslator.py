@@ -2,6 +2,7 @@ import json
 import threading
 import struct
 import serial
+import subprocess
 
 
 from WebsocketHandler import WebsocketHandler
@@ -12,6 +13,28 @@ ws = WebsocketHandler()
 serial_port = "/dev/ttyACM0"  # Update to match the serial port
 hostaddr = "0.0.0.0"
 port = 9000
+
+
+# i could not see of anywhere to put the streams and current ffmpeg process, let me know if there are anywhere else i can put them
+
+stream_0 = {"id": 0, "command": "", "process": 0}
+stream_1 = {"id": 1, "command": "", "process": 0}
+
+class Stream:
+
+    __slots__ = ["id", "command", "process"]
+
+
+    def __init__(self, id, command, process):
+
+        self.id = id
+        self.command = command
+        self.process = process
+
+        
+stream_0 = Stream(0, "", 0)
+stream_1 = Stream(1, "", 0)
+
 
 
 def parse_babelfishserial_command(command):
@@ -82,6 +105,8 @@ def value_to_hex(value, precision=32):
     
 
 def parse_babelfishws_command(command):
+    
+
     data = json.loads(command)
     cmd = data.get("CMD", "UNKNOWN")
     module_id = data.get("MID", "UNKNOWN")
@@ -97,12 +122,30 @@ def parse_babelfishws_command(command):
         case "RQT":
             command_ID = "0x00"
             #logic that does something
+  
+    
             pass
 
         case "SET":
             command_ID = "0x01"
             #logic that does something
-            pass
+
+
+
+            if(p_id and value):
+
+                thread = threading.Thread(target = handle_set_command, args = (p_id, stream_0, stream_1, value))
+                thread.start()
+
+            elif(t_no and value):
+     
+                thread = threading.Thread(target = handle_set_command, args = (t_no, stream_0, stream_1, value))
+                thread.start()
+
+            else:
+
+                print("ERROR pid, tno or value not set: 'p_id' value : {p_id}, 't_no' value: {t_no}, 'value' value {value}")
+                pass
 
         case "RST":
             command_ID = "0x02"
@@ -114,8 +157,53 @@ def parse_babelfishws_command(command):
     serial_message = f"{cmd}:{value_to_hex(module_id)}:{value_to_hex(part_num)}:{value_to_hex(t_no)}:{value_to_hex(p_id)}:{value_to_hex(value)}:{value_to_hex(target)}:{value_to_hex(data_type)}:{value_to_hex(err)}\n"
     uart = serial.Serial(serial_port, baudrate=115200, timeout=1)
     uart.write(serial_message.encode('utf-8'))
-    # Parse the JSON packet and assemble into serial (on a per command basis (use switch or match case))
+    # Parse the JSON packet and assemble into serial (on a per command basis (use switch or match case)
+
+
+def handle_set_command(id, current_id_0, current_id_1, value):
+
+    #selects which stream to choose to select
+
+    value = value
+
+    if(current_id_0.id == id):
+
+        selected_stream = current_id_0
+
+    elif(current_id_1.id == id):
+
+        selected_stream = current_id_1
+    else:
+
+        print("ERROR: id does not belong to either stream 1 or 2")
+        return
     
+    #makes a copy of the requested command chosen by the id and values
+    
+    requested_process = "ffmpeg -c:v libx264 -d v4l2 /dev/video{value} -f rtsp rtsp://localhost/stream{id}"
+
+    #if the process thats requested to run is already there, return nothing
+    
+    if(requested_process == selected_stream.command):
+
+        return
+
+
+    else:
+
+        #if there is a process and it hasnt already been terminated
+
+        if(selected_stream.process) and selected_stream.process.poll() != 0:
+
+            selected_stream.process.terminate()
+        
+        #otherwise, replace the process string with the requested process and create the new process
+        
+        parsed_requested_process = requested_process.split()
+        selected_stream.command = requested_process
+        selected_stream.process = subprocess.Popen([parsed_requested_process])
+
+    return
 
 
 
@@ -123,6 +211,7 @@ def handle_serial(serial_port):
     """
     Handles reading from the serial port, parsing commands, and sending them to the web socket.
     """
+
     try:
         
         uart = serial.Serial(serial_port, baudrate=115200, timeout=1)

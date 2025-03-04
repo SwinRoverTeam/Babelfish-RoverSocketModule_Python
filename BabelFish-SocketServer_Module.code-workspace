@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../BabelFishListener/BabelFish-SocketServer_Module"
+		},
+		{
+			"name": "Babelfish-RoverSocketModule_Python",
+			"path": "."
+		}
+	],
+	"settings": {}
+}
