@@ -3,7 +3,7 @@ import websockets
 import threading
 
 class WebsocketHandler:
-    def __init__(self, host='localhost', port=8000):
+    def __init__(self, host='localhost', port=8000, greeting=''):
         self.host = host
         self.port = port
         self.server = None
@@ -11,14 +11,15 @@ class WebsocketHandler:
         self.message_buffer = []
         self.clients = set()
         self.is_connected = False
+        self.greeting = greeting
 
     async def handler(self, websocket):
         self.clients.add(websocket)
         try:
+            await websocket.send(self.greeting)
             async for message in websocket:
                 print(f"Received message: {message}")
                 self.message_buffer.append(message)
-                await websocket.send(f"Echo: {message}")
         finally:
             self.clients.remove(websocket)
 
