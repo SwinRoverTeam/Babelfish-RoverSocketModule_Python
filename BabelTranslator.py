@@ -4,12 +4,13 @@ import struct
 import time
 import psutil
 import platform
+import rssi
 
 from WebsocketHandler import WebsocketHandler
 from BabelSerialInterface import BabelSerialInterface
 from BabelParam import BabelParams
 from BabelUtils import sendTLM, sendTLT, sendWHO, sendFCK, format_ws_message, format_serial_message, getDatatype
-
+from StreamHandler import WebcamStreamHandler
 
 
 
@@ -19,9 +20,13 @@ OS = platform.system()
 serial_port = "/dev/ttyACM0"  # Update to match the serial port
 hostaddr = "0.0.0.0"
 port = 9000
+apname = "Swinburne Rover Team"
 
 SERIAL = False
 WEBSOCKET = True
+CAMERAS = True
+
+cam = None
 ws = None
 serial = None
 if WEBSOCKET:
@@ -29,6 +34,9 @@ if WEBSOCKET:
 
 if SERIAL:
     serial = BabelSerialInterface(serial_port)
+
+if CAMERAS:
+    cam = WebcamStreamHandler()
 
 BabelP = BabelParams()
 BabelT = BabelParams()
@@ -42,6 +50,32 @@ BabelT = BabelParams()
 #BabelTargets
 #0 - Stream1
 #1 - Stream2
+io = psutil.net_io_counters()
+lastread = time.time()
+
+def readinternals():
+    #fetch internal sensor and update babel params
+    try:
+        if OS == 'Linux':
+            #BabelP.set_param('0x00', psutil.sensors_temperatures()['coretemp'][0].current)
+            pass
+        else:
+            BabelP.set_param('0x00', 0)
+        BabelP.set_param('0x01', psutil.cpu_percent())
+
+        #fetch network stats and update babel params
+
+        #BabelP.set_param('0x02', rssi.getAPinfo([apname]).get('signal', 0))
+
+        global io
+        global lastread
+        newio = psutil.net_io_counters()
+        dt = time.time() - lastread
+        BabelP.set_param('0x03', round((newio.bytes_sent - io.bytes_sent) / dt / 1000, 2))  # convert to kbps
+        io = newio
+        lastread = time.time()
+    except Exception as e:
+        print(f"Error reading internals: {e}")
 
 
 
@@ -217,10 +251,6 @@ def parse_babelfishws_command(command):
 
     
 def mainThread():
-    #set up camera interface + babel params
-    BabelT.set_param('0x00', 0, 0)
-    BabelT.set_param('0x01', 1, 1)
-
     while True:
         if ws is not None and ws.is_client_connected():
             if ws.msg_avail():
@@ -239,13 +269,7 @@ def mainThread():
                 
             else:
                 pass
-        # fetch internal sensor and update babel params
-        if OS == 'Linux':
-            BabelP.set_param('0x00', psutil.sensors_temperatures()['coretemp'][0].current)
-        else:
-            BabelP.set_param('0x00', 0)
-        BabelP.set_param('0x01', psutil.cpu_percent())
-
+        readinternals()
 
         time.sleep(0.1)
 
@@ -278,6 +302,12 @@ def value_to_hex(value, precision=32):
     else:  
         return value  # Return the string as-is 
 
+def Camhandle():
+    #set up camera interface + babel params
+    BabelT.set_param('0x00', 0, 0)
+    BabelT.set_param('0x01', 1, 1)
+    cam.switch_camera(0, BabelT.get_param('0x00'))
+    #cam.switch_camera(1, BabelT.get_param('0x01'))
 
 def main():
     # Start serial port and socket handlers in separate threads
@@ -286,7 +316,9 @@ def main():
         serial_thread = serial.start_in_thread()
     if WEBSOCKET:
         socket_thread = ws.start_in_thread()
-
+    if CAMERAS:
+        cam_thread = threading.Thread(target=Camhandle)
+        cam_thread.start()
     main_thread.start()
 
     try:
@@ -295,6 +327,8 @@ def main():
             serial_thread.join()
         if WEBSOCKET:
             socket_thread.join()
+        if CAMERAS:
+            cam_thread.join()
     except KeyboardInterrupt:
         print("Main program exiting...")
 
