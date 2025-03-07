@@ -308,6 +308,18 @@ def Camhandle():
     BabelT.set_param('0x01', 1, 1)
     cam.switch_camera(0, BabelT.get_param('0x00'))
     #cam.switch_camera(1, BabelT.get_param('0x01'))
+    while True:
+        cam1 = cam.getStream(0)
+
+        #print(cam1.command)
+        #isolate the /dev/videoX part (ffmpeg -f v4l2 -i /dev/video0 -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream0)
+        cam1 = cam1.command.split(" ")
+        cam1 = cam1[4]
+        cam1 = cam1.split("/dev/video")
+        cam1 = int(cam1[1])
+        if cam1 != BabelT.get_param('0x00'):
+            cam.switch_camera(0, BabelT.get_param('0x00'))
+        time.sleep(0.1)
 
 def main():
     # Start serial port and socket handlers in separate threads
