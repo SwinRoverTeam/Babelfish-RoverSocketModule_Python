@@ -7,18 +7,22 @@ class BabelSerialInterface:
         self.serial_port = serial_port
         self.loop = asyncio.new_event_loop()
         self.message_buffer = []
+        self.uart = None
 
     async def read_serial(self):
         try:
-            uart = serial.Serial(self.serial_port, baudrate=115200, timeout=1)
+            self.uart = serial.Serial(self.serial_port, baudrate=115200, timeout=1)
             print(f"Listening on {self.serial_port} at 115200 baud...")
             while True:
-                if uart.in_waiting > 0:
-                    raw_data = uart.readline().strip().decode('utf-8')
-                    print(f"Received from serial: {raw_data}")
+                if self.uart.in_waiting > 0:
+                    raw_data = self.uart.readline().strip().decode('utf-8')
                     self.message_buffer.append(raw_data)
         except Exception as e:
             print(f"Error with UART: {e}")
+
+    def send(self, data):
+        self.uart.write(data.encode('utf-8'))
+            
 
     def run(self):
         asyncio.set_event_loop(self.loop)

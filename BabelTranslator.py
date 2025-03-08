@@ -1,6 +1,5 @@
 import json
 import threading
-import struct
 import time
 import psutil
 import platform
@@ -8,23 +7,24 @@ import rssi
 
 from WebsocketHandler import WebsocketHandler
 from BabelSerialInterface import BabelSerialInterface
+from BabelDataConverter import BabelDataHandler
 from BabelParam import BabelParams
-from BabelUtils import sendTLM, sendTLT, sendWHO, sendFCK, format_ws_message, format_serial_message, getDatatype
+from BabelUtils import sendTLM, sendTLT, sendWHO, sendFCK, format_ws_message, format_serial_message
 from StreamHandler import WebcamStreamHandler
 
-
+conv = BabelDataHandler()
 
 MODULEID = '0x01'
 OS = platform.system()
 
-serial_port = "/dev/ttyACM0"  # Update to match the serial port
+serial_port = "/dev/ttyACM1"  # Update to match the serial port
 hostaddr = "0.0.0.0"
 port = 9000
 apname = "Swinburne Rover Team"
 
-SERIAL = False
+SERIAL = True
 WEBSOCKET = True
-CAMERAS = True
+CAMERAS = False
 
 cam = None
 ws = None
@@ -62,11 +62,8 @@ def readinternals():
         else:
             BabelP.set_param('0x00', 0)
         BabelP.set_param('0x01', psutil.cpu_percent())
-
         #fetch network stats and update babel params
-
         #BabelP.set_param('0x02', rssi.getAPinfo([apname]).get('signal', 0))
-
         global io
         global lastread
         newio = psutil.net_io_counters()
@@ -77,9 +74,6 @@ def readinternals():
     except Exception as e:
         print(f"Error reading internals: {e}")
 
-
-
-
 def parse_babelfishserial_command(command):
     """
     Parses a BabelFish command string into a dictionary, extracts byte values,
@@ -87,92 +81,63 @@ def parse_babelfishserial_command(command):
     """
     try:
         # Remove the newline and split the command
-        cmd_parts = command.strip().split(":")
-        
+        cmd_parts = command.split(":")
         if len(cmd_parts) < 2:
             raise ValueError("Invalid command format")
-        
-      
         json_command = {"CMD": "", "Data": {}}
-        
         command_type = cmd_parts[0]
         json_command["CMD"] = command_type
-        
-       
-        if command_type == 'WHO':
-            json_command = sendWHO(cmd_parts[1], cmd_parts[2], cmd_parts[3])
-            
-        
-        elif command_type == 'TLM':
-            byte_values = list(map(int, cmd_parts[2:]))
-            if len(byte_values) == 2:
-                value = struct.unpack('!e', bytes(byte_values))[0]
-                datatype = "FL16"
-            elif len(byte_values) == 4:
-                value = struct.unpack('!f', bytes(byte_values))[0]
-                datatype = "FL32"
-            elif len(byte_values) == 8:
-                value = struct.unpack('!d', bytes(byte_values))[0]
-                datatype = "FL64"
-            else:
-                raise ValueError("Expected 2, 4, or 8 byte values")
-            json_command = sendTLM(cmd_parts[1], cmd_parts[2], value, datatype)
-            json_command["Data"] = {
-                "MID": cmd_parts[1],
-                "PID": int(cmd_parts[2], 16), 
-                "Value": value,
-                "datatype": datatype
-            }
-        
-        elif command_type == 'TLT':
-            byte_values = list(map(int, cmd_parts[3:]))
-            if len(byte_values) == 2:
-                value = struct.unpack('!e', bytes(byte_values))[0]
-                datatype = "FL16"
-            elif len(byte_values) == 4:
-                value = struct.unpack('!f', bytes(byte_values))[0]
-                datatype = "FL32"
-            elif len(byte_values) == 8:
-                value = struct.unpack('!d', bytes(byte_values))[0]
-                datatype = "FL64"
-            else:
-                raise ValueError("Expected 2, 4, or 8 byte values")
-            
-            target_values = list(map(int, cmd_parts[6:]))
-            if len(target_values) == 2:
-                target = struct.unpack('!e', bytes(target_values))[0]
-            elif len(target_values) == 4:
-                target = struct.unpack('!f', bytes(target_values))[0]
-            elif len(target_values) == 8:
-                target = struct.unpack('!d', bytes(target_values))[0]
-            else:
-                raise ValueError("Expected 2, 4, or 8 byte values for Target")
-
-            json_command["Data"] = {
-                "MID": cmd_parts[1],
-                "TID": cmd_parts[2],
-                "Value": value,
-                "Target": target,
-                "datatype": datatype
-            }
-        
-        elif command_type == 'FCK':
-            error = ''.join(cmd_parts[2:9])
-            json_command["Data"] = {
-                "MID": cmd_parts[1],
-                "ERR": error
-            }
-        
-        else:
-            raise ValueError("Unknown command type")
-
+        match command_type:
+            case 'WHO':
+                json_command = sendWHO(cmd_parts[1], cmd_parts[2], cmd_parts[3])
+            case 'TLM':
+                datatype = cmd_parts[7]
+                #print(datatype)
+                datatype = conv.hex_to_datatype(datatype)
+                value = None
+                match datatype:
+                    case "INT32":
+                        value = conv.bytes_to_int32(cmd_parts[3:7])
+                    case "FL32":
+                        value = conv.bytes_to_fl32(cmd_parts[3:7])
+                    case "BOOL":
+                        value = int(cmd_parts[3], 16)
+                    case "ASCII":
+                        value = ''.join([chr(int(x, 16)) for x in cmd_parts[3:7]])
+                    
+                json_command = sendTLM(cmd_parts[1], cmd_parts[2], value, datatype)
+            case 'TLT':
+                datatype = cmd_parts[7]
+                #print(datatype)
+                datatype = conv.hex_to_datatype(datatype)
+                value = None
+                target = None
+                match datatype:
+                    case "INT16":
+                        value = conv.bytes_to_int16(cmd_parts[5:7])
+                        target = conv.bytes_to_int16(cmd_parts[3:5])
+                    case "FL16":
+                        value = conv.bytes_to_fl16(cmd_parts[5:7])
+                        target = conv.bytes_to_fl16(cmd_parts[3:5])
+                    case "BOOL":
+                        value = int(cmd_parts[5], 16)
+                        target = int(cmd_parts[3], 16)
+                    case "ASCII":
+                        value = ''.join([chr(int(x, 16)) for x in cmd_parts[5:7]])
+                        target = ''.join([chr(int(x, 16)) for x in cmd_parts[3:5]])
+                json_command = sendTLT(cmd_parts[1], cmd_parts[2], value, datatype, target)
+                
+            case 'FCK':
+                error = ''.join(cmd_parts[2:9])
+                json_command = sendFCK(cmd_parts[1], error)
+            case _:
+                return None
         return json_command
     
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error parsing serial command: {e}")
+        return None
     
-
-
 def parse_babelfishws_command(command):
     # Parse the JSON packet and assemble into serial (on a per command basis (use switch or match case))
     action = False
@@ -237,6 +202,7 @@ def parse_babelfishws_command(command):
         case "RST":
             MID = payload.get("MID", 0)
             if MID == MODULEID:
+                action = True
                 pass
             else:
                 #forward the command to the serial port
@@ -265,42 +231,15 @@ def mainThread():
         if serial is not None:
             if serial.msg_avail():
                 message = serial.get_msg()
-                print(f"Received from Serial: {message}")
-                
+                ws_message = parse_babelfishserial_command(message)
+                if ws_message is not None:
+                    ws.send(format_ws_message(ws_message))
             else:
                 pass
         readinternals()
 
         time.sleep(0.1)
 
-def value_to_hex(value, precision=32):
-    """
-    Converts values based on type:
-    - If it starts with "0x", return as is (already hex).
-    - If it contains ".", convert it as a 32-bit IEEE 754 float.
-    - If it is an integer, convert to hex.
-    - Otherwise, return the string as is.
-    """
-    if isinstance(value, str) and value.startswith("0x"):  
-        return value[2:].upper()  # Keep as hex, remove "0x" prefix
-
-    elif isinstance(value, str) and "." in value:  
-        # Convert float to IEEE 754 (single-precision)
-        float_hex = struct.unpack('!I', struct.pack('!f', float(value)))[0]
-        return hex(float_hex)[2:].upper()
-
-    elif isinstance(value, str) and value.isdigit():  
-        return hex(int(value))[2:].upper()
-
-    elif isinstance(value, int):  
-        return hex(value)[2:].upper()
-
-    elif isinstance(value, float):  
-        float_hex = struct.unpack('!I', struct.pack('!f', value))[0]
-        return hex(float_hex)[2:].upper()
-
-    else:  
-        return value  # Return the string as-is 
 
 def Camhandle():
     #set up camera interface + babel params
