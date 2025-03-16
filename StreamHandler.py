@@ -25,7 +25,7 @@ class WebcamStreamHandler:
 
     def switch_camera(self, streamNumber, cameraNumber):
         print(f"Switching camera {cameraNumber} to stream {streamNumber}")
-        requested_process = f"ffmpeg -f v4l2 -i /dev/video{cameraNumber} -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream{streamNumber}"
+        requested_process = f"ffmpeg -f v4l2 -i /dev/video{cameraNumber} -c:v h264_v4l2m2m -preset ultrafast -tune zerolatency -f rtsp rtsp://0.0.0.0:8554/stream{streamNumber}"
         match streamNumber:
             case 0:
                 if self.stream1.command == requested_process:
