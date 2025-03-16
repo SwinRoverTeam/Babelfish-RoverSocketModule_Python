@@ -17,14 +17,14 @@ conv = BabelDataHandler()
 MODULEID = '0x01'
 OS = platform.system()
 
-serial_port = "/dev/ttyACM1"  # Update to match the serial port
+serial_port = "/dev/serial0"  # Update to match the serial port
 hostaddr = "0.0.0.0"
 port = 9000
 apname = "Swinburne Rover Team"
 
 SERIAL = True
 WEBSOCKET = True
-CAMERAS = False
+CAMERAS = True
 
 cam = None
 ws = None
@@ -68,7 +68,7 @@ def readinternals():
         global lastread
         newio = psutil.net_io_counters()
         dt = time.time() - lastread
-        BabelP.set_param('0x03', round((newio.bytes_sent - io.bytes_sent) / dt / 1000, 2))  # convert to kbps
+        BabelP.set_param('0x03', round((newio.bytes_sent - io.bytes_sent) / dt , 2))  # convert to kbps
         io = newio
         lastread = time.time()
     except Exception as e:
@@ -244,7 +244,7 @@ def mainThread():
 def Camhandle():
     #set up camera interface + babel params
     BabelT.set_param('0x00', 0, 0)
-    BabelT.set_param('0x01', 1, 1)
+    #BabelT.set_param('0x01', 1, 1)
     cam.switch_camera(0, BabelT.get_param('0x00'))
     #cam.switch_camera(1, BabelT.get_param('0x01'))
     while True:
