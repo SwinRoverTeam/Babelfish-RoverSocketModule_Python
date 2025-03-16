@@ -30,7 +30,7 @@ cam = None
 ws = None
 serial = None
 if WEBSOCKET:
-    ws = WebsocketHandler(greeting=format_ws_message(sendWHO(MODULEID, 2, 2)))
+    ws = WebsocketHandler(host=hostaddr,port=port,greeting=format_ws_message(sendWHO(MODULEID, 2, 2)))
 
 if SERIAL:
     serial = BabelSerialInterface(serial_port)
